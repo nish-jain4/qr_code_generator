@@ -1,240 +1,214 @@
 # QuantumTrust DB Integration + QR Code Generator + QR Retrieval API + Web Dashboard
-# Uses SQLite for simplicity (can be scaled to Firebase/PostgreSQL)
-# Required packages: qrcode, pillow, flask
+# Uses SQLite, Fernet encryption for QR payloads, and Bootstrap‑like themed HTML pages.
+# Install requirements: pip install qrcode[pil] flask opencv-python cryptography
 
-# Install using:
-# pip install qrcode[pil] flask
-
-import os
-import datetime
-import io
-import sqlite3
-import qrcode
-import base64
-from flask import Flask, send_file, request, jsonify, render_template, redirect, url_for, session
-# from pyzbar.pyzbar import decode
-import cv2
-import numpy as np
+import os, io, base64, datetime, sqlite3, cv2
+from flask import Flask, render_template, request, redirect, url_for, send_file, jsonify, session
 from werkzeug.utils import secure_filename
-from cryptography.fernet import Fernet  
+from cryptography.fernet import Fernet
+import qrcode
 
+# Initialize Flask app
 app = Flask(__name__)
-app.secret_key = "super-secret-key"
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "super-secret-key")
 
-# Generate or load a Fernet key for QR code encryption
-fernet_key = Fernet.generate_key()  # For production, save and reuse securely
-fernet = Fernet(fernet_key)
+# -------------------- Paths --------------------
+UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+DB_PATH = os.path.join(app.root_path, 'quantumtrust.db')
+KEY_FILE = os.path.join(app.root_path, 'fernet.key')
 
-# Simulated PQC encryption (replace with liboqs for production)
-def pqc_encrypt(data: str) -> str:
-    encrypted = fernet.encrypt(data.encode())
-    return base64.urlsafe_b64encode(encrypted).decode()
+# -------------------- Encryption --------------------
 
-def pqc_decrypt(encoded: str) -> str:
-    encrypted = base64.urlsafe_b64decode(encoded.encode())
-    return fernet.decrypt(encrypted).decode()
-
-# --- Database Setup ---
-DATABASE = "quantumtrust.db"
-def init_db():
-    conn = sqlite3.connect("quantumtrust.db")
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT NOT NULL UNIQUE,
-            device_id TEXT,
-            last_login TEXT,
-            qr_code BLOB
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-# --- Add User to DB and Generate QR ---
-def add_user_and_generate_qr(name, email, device_id):
-    session_id = os.urandom(6).hex()
-    timestamp = datetime.datetime.now().astimezone().isoformat()
-    payload = f"{email}|{device_id}|{timestamp}|{session_id}"
-    encrypted_payload = pqc_encrypt(payload)
-
-    qr = qrcode.QRCode(box_size=6, border=2)
-    qr.add_data(encrypted_payload)
-    qr.make(fit=True)
-    img = qr.make_image(fill='black', back_color='white')
-    
-
-    # Save QR image to in-memory buffer
-    buffer = io.BytesIO()
-    img.save(buffer, "PNG")
-    qr_bytes = buffer.getvalue()
-
-    # Save user to DB
-    conn = sqlite3.connect("quantumtrust.db")
-    c = conn.cursor()
-    c.execute('''
-        INSERT OR REPLACE INTO users (name, email, device_id, last_login, qr_code)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (name, email, device_id, timestamp, qr_bytes))
-    conn.commit()
-    conn.close()
-
-    print(f"✅ User '{name}' added and QR code stored in database.")
-    return encrypted_payload
-
-# --- Fetch All Users ---
-def fetch_all_users():
-    conn = sqlite3.connect("quantumtrust.db")
-    c = conn.cursor()
-    c.execute("SELECT id, name, email, device_id, last_login FROM users")
-    rows = c.fetchall()
-    conn.close()
-    return rows
-
-# --- API: Get QR Image by Email ---
-def get_user_by_email(email):
-    conn = sqlite3.connect("quantumtrust.db")
-    c = conn.cursor()
-    c.execute("SELECT name, email, device_id, last_login FROM users WHERE email=?", (email,))
-    result = c.fetchone()
-    conn.close()
-    return result
-
-
-# --- Developer Login (Simple access control) ---
-@app.route("/dev_login", methods=["GET", "POST"])
-def dev_login():
-    if request.method == "POST":
-        password = request.form.get("password")
-        if password == "admin123":
-            session["developer"] = True
-            return redirect(url_for("dashboard"))
-        return "Invalid Password"
-    return render_template("dev_login.html")
-
-@app.route("/get_qr", methods=["GET"])
-def get_qr():
-    email = request.args.get("email")
-    if not email:
-        return jsonify({"error": "Email parameter is required"}), 400
-
-    conn = sqlite3.connect("quantumtrust.db")
-    c = conn.cursor()
-    c.execute("SELECT qr_code FROM users WHERE email=?", (email,))
-    result = c.fetchone()
-    conn.close()
-
-    if result and result[0]:
-        return send_file(io.BytesIO(result[0]), mimetype="image/png")
+def load_or_create_fernet():
+    # Load existing encryption key or create a new one
+    if os.path.exists(KEY_FILE):
+        key = open(KEY_FILE, 'rb').read()
     else:
-        return jsonify({"error": "QR code not found for email"}), 404
+        key = Fernet.generate_key()
+        open(KEY_FILE, 'wb').write(key)
+    return Fernet(key)
 
-# --- API: Add New User ---
-@app.route("/add_user", methods=["POST"])
-def api_add_user():
-    data = request.get_json()
-    name = data.get("name")
-    email = data.get("email")
-    device_id = data.get("device_id")
+# Load Fernet instance
+fernet = load_or_create_fernet()
 
-    if not name or not email or not device_id:
-        return jsonify({"error": "Missing required fields"}), 400
+def pqc_encrypt(data: str) -> str:
+    # Encrypt the data and return base64-encoded string
+    return base64.urlsafe_b64encode(fernet.encrypt(data.encode())).decode()
 
-    encrypted = add_user_and_generate_qr(name, email, device_id)
-    return jsonify({"message": "User added", "encrypted_payload": encrypted})
+def pqc_decrypt(token: str) -> str:
+    # Decode base64 and decrypt the token
+    return fernet.decrypt(base64.urlsafe_b64decode(token)).decode()
 
-# --- API: Get All Users ---
-@app.route("/users", methods=["GET"])
-def api_users():
-    users = fetch_all_users()
-    return jsonify(users)
+# -------------------- Database --------------------
 
-# --- Web Dashboard: Display Users ---
-@app.route("/dashboard")
-def dashboard():
-    users = fetch_all_users()
-    return render_template("dashboard.html", users=users)
+def init_db():
+    # Initialize SQLite database with users table
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        email TEXT UNIQUE NOT NULL,
+                        phone NUMERIC NOT NULL,
+                        device_id TEXT,
+                        payment_method TEXT,
+                        upi_id TEXT,
+                        loyalty_id TEXT,
+                        last_login TEXT,
+                        qr_code BLOB)
+                  ''')
+        conn.commit()
 
-# --- Web Form: Register and Show QR ---
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-        name = request.form.get("name")
-        email = request.form.get("email")
-        device_id = request.form.get("device_id")
-        encrypted = add_user_and_generate_qr(name, email, device_id)
-        return redirect(url_for("show_qr", data=encrypted))
+# -------------------- Helpers --------------------
 
-    return render_template("register.html")
+def generate_qr_bytes(payload: str) -> bytes:
+    # Generate QR code image in PNG format and return bytes
+    qr = qrcode.QRCode(box_size=6, border=2)
+    qr.add_data(payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='black', back_color='white')
+    buf = io.BytesIO()
+    img.save(buf)
+    return buf.getvalue()
 
-# --- Show QR and link to view details ---
-@app.route("/show_qr")
-def show_qr():
-    data = request.args.get("data")
-    try:
-        if data is None:
-            raise ValueError("No data provided")
-        decoded = pqc_decrypt(data)
-        email = decoded.split("|")[0]
-    except:
-        email = ""
-    return render_template("show_qr.html", data=data, email=email)
-   
-# --- Upload QR and Fetch Details ---
-@app.route("/upload_qr", methods=["GET", "POST"])
-def upload_qr():
-    if request.method == "POST":
-        file = request.files['qrfile']
-        if file:
-            filename = secure_filename(file.filename if file.filename else "uploaded_qr.png")
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-            img = cv2.imread(filepath)
-            detector = cv2.QRCodeDetector()
-            data, _, _ = detector.detectAndDecode(img)
+# -------------------- Core Routes --------------------
 
-            if data:
-                return redirect(url_for("scan", data=data))
-            else:
-                return "Could not decode QR code."
-
-    return render_template("upload_qr.html")
-
-
-
-# --- Scan QR and fetch user info ---
-@app.route("/scan")
-def scan():
-    encrypted = request.args.get("data")
-    if not encrypted:
-        return "No data provided."
-    try:
-        decoded = pqc_decrypt(encrypted)
-        email = decoded.split("|")[0]
-        user = get_user_by_email(email)
-        if user:
-            return f"""
-                <h2>User Details</h2>
-                Name: {user[0]}<br>
-                Email: {user[1]}<br>
-                Device ID: {user[2]}<br>
-                Last Login: {user[3]}<br>
-            """
-        else:
-            return "User not found"
-    except:
-        return "Invalid QR or decryption failed."
-    
-# --- Homepage Route: Choose Role ---
-@app.route("/")
+@app.route('/')
 def home():
-    return render_template("home.html")
+    return render_template('home.html')
 
-# --- Main Runner ---
-if __name__ == "__main__":
-    init_db()
-    app.run(debug=True, port=8080)
+# -------- USER REGISTRATION (HTML form -> QR) --------
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        return _process_registration()
+    return render_template('register.html')
+
+# Support legacy form action="/register_user"
+@app.route('/register_user', methods=['POST'])
+def register_user():
+    return _process_registration()
+
+def _process_registration():
+    """Common logic for both /register and /register_user POST."""
+    # Extract user data from form
+    name  = request.form.get('name')
+    email = request.form.get('email')
+    phone = request.form.get('phone')
+    payment_method = request.form.get('payment_method')
+    upi_id = request.form.get('upi_id')
+    loyalty_id = request.form.get('loyalty_id')
+    timestamp = datetime.datetime.now().astimezone().isoformat()
+    session_id = os.urandom(6).hex()
+
+    # --- build payload & encrypt ---
+    payload = f"{email}|{loyalty_id}|{timestamp}|{session_id}"
+    encrypted_payload = pqc_encrypt(payload)
+    qr_png = generate_qr_bytes(encrypted_payload)
+
+    # --- store user in DB (QR as blob) ---
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute('''INSERT OR REPLACE INTO users
+                     (name,email,phone,payment_method,upi_id,loyalty_id,last_login,qr_code)
+                     VALUES (?,?,?,?,?,?,?,?)''',
+                  (name,email,phone,payment_method,upi_id,loyalty_id,timestamp,qr_png))
+        conn.commit()
+
+    # Redirect to QR display page with encrypted token
+    return redirect(url_for('show_qr', data=encrypted_payload))
+
+# -------- SHOW & DOWNLOAD QR --------
+@app.route('/show_qr')
+def show_qr():
+    token = request.args.get('data')
+    if not token:
+        return "No QR data", 400
+    try:
+        decoded = pqc_decrypt(token)
+        email = decoded.split('|')[0]
+    except Exception:
+        return "Invalid QR data", 400
+    # Fetch QR code from DB and encode as base64 for HTML rendering
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute('SELECT qr_code FROM users WHERE email=?', (email,))
+        row = c.fetchone()
+    qr_data_b64 = base64.b64encode(row[0]).decode() if row else None
+    return render_template('show_qr.html', qr_data=qr_data_b64, token=decoded)
+
+@app.route('/download_qr/<email>')
+def download_qr(email):
+    # Fetch and send QR code as downloadable PNG
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute('SELECT qr_code FROM users WHERE email=?', (email,))
+        row = c.fetchone()
+    if not row:
+        return 'QR not found', 404
+    return send_file(io.BytesIO(row[0]), mimetype='image/png', as_attachment=True, download_name=f'{email}_qr.png')
+
+# -------- UPLOAD & SCAN QR --------
+@app.route('/upload_qr', methods=['GET', 'POST'])
+def upload_qr():
+    user = error = None
+    if request.method == 'POST':
+        file = request.files.get('qrfile')
+        if file and file.filename and allowed_file(file.filename):
+            path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(file.filename))
+            file.save(path)
+            img = cv2.imread(path)
+            data, *_ = cv2.QRCodeDetector().detectAndDecode(img)
+            if data:
+                try:
+                    decoded = pqc_decrypt(data)
+                    email = decoded.split('|')[0]
+                    with sqlite3.connect(DB_PATH) as conn:
+                        c = conn.cursor()
+                        c.execute('SELECT name,email,phone,last_login FROM users WHERE email=?', (email,))
+                        user = c.fetchone()
+                    if not user:
+                        error = 'User not found in DB.'
+                except Exception:
+                    error = 'Invalid or corrupted QR code.'
+            else:
+                error = 'Could not decode QR.'
+        else:
+            error = 'Invalid file type.'
+    return render_template('upload_qr.html', user=user, error=error)
+
+# -------- DEVELOPER & DASHBOARD --------
+@app.route('/dev_login', methods=['GET', 'POST'])
+def dev_login():
+    if request.method == 'POST':
+        if request.form.get('password') == 'admin123':
+            session['developer'] = True
+            return redirect(url_for('dashboard'))
+        return 'Invalid Password', 401
+    return render_template('dev_login.html')
+
+@app.route('/dashboard')
+def dashboard():
+    if not session.get('developer'):
+        return redirect(url_for('home'))
+    # Fetch all user records for admin dashboard
+    with sqlite3.connect(DB_PATH) as conn:
+        users = conn.execute('SELECT id,name,email,phone,last_login FROM users').fetchall()
+    return render_template('dashboard.html', users=users)
+
+@app.route('/logout')
+def logout():
+    # Clear developer session and return home
+    session.pop('developer', None)
+    return redirect(url_for('home'))
+
+# -------------------- Main --------------------
+if __name__ == '__main__':
+    init_db()  # Ensure database and tables exist
+    app.run(debug=True, port=8080)  # Start Flask app

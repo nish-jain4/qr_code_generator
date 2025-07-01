@@ -1,22 +1,86 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/register.css') }}">
+  <meta charset="UTF-8">
+  <title>QAuth Retail – User Registration</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Register | QuantumTrust</title>
-    <style>
-        body { font-family: Arial; padding: 40px; background: #f4f4f4; text-align: center; }
-        input, button { margin: 10px; padding: 10px; width: 250px; }
-    </style>
+  <!-- Unicons -->
+  <link rel="stylesheet" href="https://unicons.iconscout.com/release/v4.0.8/css/line.css">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
-<body>
-    <h2>Register New User</h2>
-    <form method="post">
-        <input type="text" name="name" placeholder="Full Name" required><br>
-        <input type="email" name="email" placeholder="Email" required><br>
-        <input type="text" name="device_id" placeholder="Device ID"><br>
-        <button type="submit">Generate QR Code</button>
+
+<body class="dark-blue">
+  <!-- Theme Switcher -->
+  <div class="theme-switcher">
+    <button id="theme-toggle" class="theme-button" aria-label="Toggle theme">
+      <i class="uil uil-palette"></i>
+    </button>
+    <ul class="theme-options">
+      <li><input type="radio" name="theme" id="dark-blue" value="dark-blue" checked>
+        <label for="dark-blue" class="theme-label" style="--theme-preview: hsl(240, 10%, 15%)">Dark Blue</label></li>
+      <li><input type="radio" name="theme" id="dark-green" value="dark-green">
+        <label for="dark-green" class="theme-label" style="--theme-preview: hsl(130, 12%, 10%)">Dark Green</label></li>
+      <li><input type="radio" name="theme" id="dark-gray" value="dark-gray">
+        <label for="dark-gray" class="theme-label" style="--theme-preview: hsl(0, 0%, 15%)">Dark Gray</label></li>
+      <li><input type="radio" name="theme" id="light-green" value="light-green">
+        <label for="light-green" class="theme-label" style="--theme-preview: hsl(130, 10%, 88%)">Light Green</label></li>
+      <li><input type="radio" name="theme" id="light-gray" value="light-gray">
+        <label for="light-gray" class="theme-label" style="--theme-preview: hsl(0, 0%, 90%)">Light Gray</label></li>
+    </ul>
+  </div>
+
+  <!-- Main -->
+ <main class="container">
+  <section class="section">
+    <h2 class="section-title" data-heading="User Registration">QAuth Retail – User Registration</h2>
+    <form action="/register_user" method="POST" class="form-container">
+      <div class="form-grid">
+        <label for="name">Full Name</label>
+        <input type="text" name="name" id="name" required placeholder="John Doe">
+        <br> <br>
+
+
+        <label for="phone">Phone Number</label>
+        <input type="tel" name="phone" id="phone" pattern="[0-9]{10}" required placeholder="9876543210">
+        <br><br>
+
+        <label for="email">Email Address</label>
+        <input type="email" name="email" id="email" required placeholder="you@example.com">
+        <br><br>
+
+        <label for="payment_method">Preferred Payment Method</label>
+        <select name="payment_method" id="payment_method" required>
+          <option value="" disabled selected>Select Payment Method</option>
+          <option value="UPI">UPI</option>
+          <option value="Card">Card</option>
+          <option value="Cash">Cash</option>
+        </select>
+        <br><br>
+
+        <label for="upi_id">UPI ID (Optional)</label>
+        <input type="text" name="upi_id" id="upi_id" placeholder="yourname@upi">
+        <br><br>
+
+        <label for="loyalty_id">Store Loyalty ID</label>
+        <input type="text" name="loyalty_id" id="loyalty_id" placeholder="XYZ12345">
+        <br><br>
+      </div>
+
+      <div class="checkbox-group">
+        <label><input type="checkbox" name="biometric"> Enable biometric fallback</label>
+        <br>
+        <label><input type="checkbox" name="alerts" checked> Receive offers & alerts</label>
+      </div>
+
+      <button   type="submit" class="primary-button" class="Vertical-center" >🚀 Generate QR Code</button>
     </form>
+  </section>
+</main>
+
+  <!-- JS -->
+  <script src="{{ url_for('static', filename='js/register.js') }}"></script>
 </body>
 </html>

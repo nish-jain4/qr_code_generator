@@ -1,23 +1,60 @@
-<!-- HOMEPAGE, MAIN PAGE-->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-   <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
+  <meta charset="UTF-8">
+  <title>QuantumTrust | Home</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>QuantumTrust Home</title>
-    
+  <!-- Unicons -->
+  <link rel="stylesheet" href="https://unicons.iconscout.com/release/v4.0.8/css/line.css">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
-<body class="bg-light">
-  <div class="container text-center mt-5">
-    <h1 class="mb-4">🔐 Welcome to QuantumTrust</h1>
-    <p class="lead">Secure Identity. Zero-Trust Retail. Encrypted QR Access.</p>
 
-    <div class="d-grid gap-3 col-6 mx-auto mt-5">
-      <a href="/register" class="btn btn-primary btn-lg">User - Register & Generate QR</a>
-      <a href="/upload_qr" class="btn btn-secondary btn-lg">User - Upload QR to View Details</a>
-      <a href="/dev_login" class="btn btn-dark btn-lg">Developer - Login</a>
-    </div>
+<body class="dark-blue">
+  <!-- Theme Switcher -->
+  <div class="theme-switcher">
+    <button id="theme-toggle" class="theme-button" aria-label="Toggle theme">
+      <i class="uil uil-palette"></i>
+    </button>
+    <ul class="theme-options">
+      <li><input type="radio" name="theme" id="dark-blue" value="dark-blue" checked>
+        <label for="dark-blue" class="theme-label" style="--theme-preview: hsl(240, 10%, 15%)">Dark Blue</label></li>
+      <li><input type="radio" name="theme" id="dark-green" value="dark-green">
+        <label for="dark-green" class="theme-label" style="--theme-preview: hsl(130, 12%, 10%)">Dark Green</label></li>
+      <li><input type="radio" name="theme" id="dark-gray" value="dark-gray">
+        <label for="dark-gray" class="theme-label" style="--theme-preview: hsl(0, 0%, 15%)">Dark Gray</label></li>
+      <li><input type="radio" name="theme" id="light-green" value="light-green">
+        <label for="light-green" class="theme-label" style="--theme-preview: hsl(130, 10%, 88%)">Light Green</label></li>
+      <li><input type="radio" name="theme" id="light-gray" value="light-gray">
+        <label for="light-gray" class="theme-label" style="--theme-preview: hsl(0, 0%, 90%)">Light Gray</label></li>
+    </ul>
   </div>
+
+  <main class="section">
+    <h2 class="section-title">Welcome to QuantumTrust</h2>
+
+    <div class="container grid" style="max-width: 700px; row-gap: 1.5rem;">
+       <p style="text-align: center; font-size: 1.1rem;">
+        Empower your retail experience with our secure QR-based customer identity and checkout system.
+      </p>
+
+      <div class="grid" style="gap: 1rem; justify-content: center;">
+        <a href="{{ url_for('register') }}" class="button">
+          <i class="uil uil-user-plus"></i> New User Registration
+        </a>
+        <a href="{{ url_for('upload_qr') }}" class="button">
+          <i class="uil uil-upload"></i> Existing User Login
+        </a>
+        <a href="{{ url_for('dev_login') }}" class="button">
+          <i class="uil uil-lock-alt"></i> Developer Dashboard
+        </a>
+      </div>
+    </div>
+  </main>
+
+  <!-- JS -->
+  <script src="{{ url_for('static', filename='js/register.js') }}"></script>
 </body>
 </html>
